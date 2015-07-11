@@ -4,8 +4,6 @@
 package db
 
 import scala.language.postfixOps
-import Rel._
-import Op._
 import Expr._
 
 
@@ -17,8 +15,30 @@ case class Table(columns: Array[Column]) {
   val length = columns(0).length
 }
 
-case class Column(data: Array[Int], info: Info, min: Int, max: Int) { 
+trait Column {
+  def info: Info
+  def length: Int
+  def getAsAny(idx: Int): Any
+}
+
+case class IntColumn(data: Array[Int], info: Info, min: Int, max: Int) extends Column { 
   def range = max - min + 1
+  def length = data.length
+  def getAsAny(idx: Int) = data(idx)
+}
+
+case class LongColumn(data: Array[Long], info: Info, min: Long, max: Long) extends Column { 
+  def range = max - min + 1
+  def length = data.length
+  def getAsAny(idx: Int) = data(idx)
+}
+
+case class FloatColumn(data: Array[Float], info: Info, min: Float, max: Float) extends Column {
+  def length = data.length
+  def getAsAny(idx: Int) = data(idx)
+}
+
+case class DoubleColumn(data: Array[Double], info: Info, min: Double, max: Double) extends Column {
   def length = data.length
   def getAsAny(idx: Int) = data(idx)
 }
@@ -35,13 +55,16 @@ object Info {
 
 sealed trait ColumnType
 case object IntType extends ColumnType
+case object LongType extends ColumnType
+case object FloatType extends ColumnType
+case object DoubleType extends ColumnType
+
 
 
 object Column {
   def make(data: Array[Int]) = {
-
     if (data.length == 0) {
-      Column(data, Info(IntType, true, true, true, true), 0, -1)
+      IntColumn(data, Info(IntType, true, true, true, true), 0, -1)
 
     } else {
 
@@ -62,13 +85,108 @@ object Column {
         i += 1
       }
 
-      Column(data, Info(IntType, descending, ascending, descDistinct || ascDisctinct, oids), min, max)
+      IntColumn(data, Info(IntType, descending, ascending, descDistinct || ascDisctinct, oids), min, max)
     }
   }
 
   def makeWithoutChecking(data: Array[Int]) = {
-    Column(data, Info.randomData(IntType), 0, -1)
+    IntColumn(data, Info.randomData(IntType), 0, -1)
   }
+
+
+  def make(data: Array[Long]) = {
+    if (data.length == 0) {
+      LongColumn(data, Info(LongType, true, true, true, true), 0, -1)
+
+    } else {
+
+      var i = 1
+      var ascending, descending, ascDisctinct, descDistinct = true
+      var lastVal, min, max = data(0)
+      var oids = data(0) == 0
+
+      while (i < data.length) {
+        if (data(i) >= lastVal) descending = false
+        if (data(i) >  lastVal) descDistinct = false
+        if (data(i) <= lastVal) ascending = false
+        if (data(i) <  lastVal) ascDisctinct = false
+        if (data(i) != i) oids = false
+        min = math.min(min, data(i))
+        max = math.max(max, data(i))
+        lastVal = data(i)
+        i += 1
+      }
+
+      LongColumn(data, Info(LongType, descending, ascending, descDistinct || ascDisctinct, oids), min, max)
+    }
+  }
+
+  def makeWithoutChecking(data: Array[Long]) = {
+    LongColumn(data, Info.randomData(LongType), 0, -1)
+  }
+
+  def make(data: Array[Float]) = {
+    if (data.length == 0) {
+      FloatColumn(data, Info(FloatType, true, true, true, true), 0, -1)
+
+    } else {
+
+      var i = 1
+      var ascending, descending, ascDisctinct, descDistinct = true
+      var lastVal, min, max = data(0)
+      var oids = data(0) == 0
+
+      while (i < data.length) {
+        if (data(i) >= lastVal) descending = false
+        if (data(i) >  lastVal) descDistinct = false
+        if (data(i) <= lastVal) ascending = false
+        if (data(i) <  lastVal) ascDisctinct = false
+        if (data(i) != i) oids = false
+        min = math.min(min, data(i))
+        max = math.max(max, data(i))
+        lastVal = data(i)
+        i += 1
+      }
+
+      FloatColumn(data, Info(FloatType, descending, ascending, descDistinct || ascDisctinct, oids), min, max)
+    }
+  }
+
+  def makeWithoutChecking(data: Array[Float]) = {
+    FloatColumn(data, Info.randomData(FloatType), 0, -1)
+  }
+
+  def make(data: Array[Double]) = {
+    if (data.length == 0) {
+      DoubleColumn(data, Info(DoubleType, true, true, true, true), 0, -1)
+
+    } else {
+
+      var i = 1
+      var ascending, descending, ascDisctinct, descDistinct = true
+      var lastVal, min, max = data(0)
+      var oids = data(0) == 0
+
+      while (i < data.length) {
+        if (data(i) >= lastVal) descending = false
+        if (data(i) >  lastVal) descDistinct = false
+        if (data(i) <= lastVal) ascending = false
+        if (data(i) <  lastVal) ascDisctinct = false
+        if (data(i) != i) oids = false
+        min = math.min(min, data(i))
+        max = math.max(max, data(i))
+        lastVal = data(i)
+        i += 1
+      }
+
+      DoubleColumn(data, Info(DoubleType, descending, ascending, descDistinct || ascDisctinct, oids), min, max)
+    }
+  }
+
+  def makeWithoutChecking(data: Array[Double]) = {
+    DoubleColumn(data, Info.randomData(DoubleType), 0, -1)
+  }
+
 }
 
 
@@ -129,7 +247,7 @@ sealed trait Src {
   def map(f: RowRef => RowRef) = Map(this, f(row))
   def flatMap(f: RowRef => Src) = FlatMap(this, f(row))
 
-  def groupBy(aggr: RowRef => Seq[Aggr], on: RowRef => Expr) = GroupBy(this, aggr(row), on(row))
+  def groupBy(aggr: RowRef => Seq[Aggr], on: RowRef => Expr = null) = GroupBy(this, aggr(row), if (on == null) null else on(row))
   def getAll = GetAll(this)
 }
 
@@ -182,22 +300,29 @@ case class CountDistinct(e: Expr) extends Aggr
 
 
 sealed trait Expr {
-  def +(e: Expr) = Op.Plus(this, e)
-  def +(x: Int)  = Op.Plus(this, Const(x))
-  def -(e: Expr) = Op.Minus(this, e)
-  def -(x: Int)  = Op.Minus(this, Const(x))
-  def *(e: Expr) = Op.Times(this, e)
-  def *(x: Int)  = Op.Times(this, Const(x))
-  def /(e: Expr) = Op.Div(this, e)
-  def /(x: Int)  = Op.Div(this, Const(x))
-  def %(e: Expr) = Op.Mod(this, e)
-  def %(x: Int)  = Op.Mod(this, Const(x))
-  def > (b: Expr)   = Rel.Gt(this, b)
-  def > (x: Int)    = Rel.Gt(this, Const(x))
-  def < (b: Expr)   = Rel.Lt(this, b)
-  def < (x: Int)    = Rel.Lt(this, Const(x))
-  def === (b: Expr) = Rel.Eq(this, b)
-  def !== (b: Expr) = Rel.Ne(this, b)
+
+  //override def nestedExprs: Seq[Expr]
+
+  def +(e: Expr): Expr = Op(this, e, "+")
+  def -(e: Expr): Expr = Op(this, e, "-")
+  def *(e: Expr): Expr = Op(this, e, "*")
+  def /(e: Expr): Expr = Op(this, e, "/")
+  def %(e: Expr): Expr = Op(this, e, "%")
+  def +(x: Int): Expr  = this + Const(x)
+  def -(x: Int): Expr  = this - Const(x)
+  def *(x: Int): Expr  = this * Const(x)
+  def /(x: Int): Expr  = this / Const(x)
+  def %(x: Int): Expr  = this % Const(x)
+  def > (b: Expr): BoolExpr   = Rel(this, b, ">")
+  def < (b: Expr): BoolExpr   = Rel(this, b, "<")
+  def >=(b: Expr): BoolExpr   = Rel(this, b, ">=")
+  def <=(b: Expr): BoolExpr   = Rel(this, b, "<=")
+  def > (x: Int): BoolExpr    = this > Const(x)
+  def < (x: Int): BoolExpr    = this < Const(x)
+  def >=(x: Int): BoolExpr    = this >= Const(x)
+  def <=(x: Int): BoolExpr    = this <= Const(x)
+  def === (b: Expr): BoolExpr = Rel(this, b, "==")
+  def !== (b: Expr): BoolExpr = Rel(this, b, "!=")
 }
 
 
@@ -223,34 +348,7 @@ object Expr {
       case c: Col => c
     }, (acc, x) => acc + x, Set())
 
-
-  def traverse[T, R](e: Expr, f: PartialFunction[Expr, T], g: (R, T) => R, init: R) = {
-
-    def trav(e: Expr, init: R): R = e match {
-      case e @ Op(x, y, op) if f.isDefinedAt(e)  => trav(y, trav(x, g(init, f(e))))
-      case e @ Op(x, y, op)                      => trav(y, trav(x, init))
-
-      case e @ Rel(x, y, op) if f.isDefinedAt(e) => trav(y, trav(x, g(init, f(e))))
-      case e @ Op(x, y, op)                      => trav(y, trav(x, init))
-
-      case e @ Not(x) if f.isDefinedAt(e)        => trav(x, g(init, f(e)))
-      case e @ Not(x)                            => trav(x, init)
-
-      case e @ And(x, y) if f.isDefinedAt(e)     => trav(y, trav(x, g(init, f(e))))
-      case e @ And(x, y)                         => trav(y, trav(x, init))
-
-      case e @ Or(x, y) if f.isDefinedAt(e)      => trav(y, trav(x, g(init, f(e))))
-      case e @ Or(x, y)                          => trav(y, trav(x, init))
-
-      case e if f.isDefinedAt(e) => g(init, f(e))
-      case e => init
-    }
-
-    trav(e, init)
-    
-  }
-
-  def getTableRefs(expr: Expr) = traverse[TableRef, Set[TableRef]](expr, {
+  def getTableRefs(expr: Expr) = _traverse[TableRef, Set[TableRef]](expr, {
     case c: Col => c.table
   }, (acc, t) => acc + t, Set())
 
@@ -266,8 +364,6 @@ object Expr {
 }
 
 
-
-
 case class Const(value: Int) extends Expr
 //case class Param(paramidx: Int) extends Expr
 case class Oid(table: TableRef) extends Expr
@@ -276,15 +372,9 @@ case class Length(table: TableRef) extends Expr
 case class Col(table: TableRef, colidx: Int)(val info: Info) extends Expr
 case class Op(x: Expr, y: Expr, op: String) extends Expr
 case class Func1(f: Int => Int, e: Expr) extends Expr
+case class IfExpr(cond: BoolExpr, thenExpr: Expr, elseExpr: Expr) extends Expr
+case class Cast(x: Expr, tpe: ColumnType) extends Expr
 case class BinarySearch(col: Col, value: Expr, startIndex: Expr, findLowerBound: Boolean = false) extends Expr
-
-object Op {
-  def Plus(x: Expr, y: Expr)  = Op(x, y, "+")
-  def Minus(x: Expr, y: Expr) = Op(x, y, "-")
-  def Times(x: Expr, y: Expr) = Op(x, y, "*")
-  def Div(x: Expr, y: Expr)   = Op(x, y, "/")
-  def Mod(x: Expr, y: Expr)   = Op(x, y, "%")
-}
 
 
 sealed trait BoolExpr extends Expr {
@@ -300,18 +390,11 @@ case class And(x: BoolExpr, y: BoolExpr) extends BoolExpr
 case class Or(x: BoolExpr, y: BoolExpr) extends BoolExpr
 case class Rel(x: Expr, y: Expr, op: String) extends BoolExpr
 
-object Rel {
-  def Eq(x: Expr, y: Expr) = Rel(x, y, "==")
-  def Ne(x: Expr, y: Expr) = Rel(x, y, "!=")
-  def Gt(x: Expr, y: Expr) = Rel(x, y, ">")
-  def Lt(x: Expr, y: Expr) = Rel(x, y, "<")
-}
-
 
 
 
 object Util {
-  def binarySearch(data: Column, fromIndex: Int, toIndex: Int, key: Int, findLowerBound: Boolean): Int = {
+  def binarySearch(data: IntColumn, fromIndex: Int, toIndex: Int, key: Int, findLowerBound: Boolean): Int = {
     Compile.assuming(data.info.ascending)
     val pos = java.util.Arrays.binarySearch(data.data, fromIndex, toIndex, key)
     if (findLowerBound) {
@@ -461,7 +544,7 @@ object Compile {
           ..${ for (i <- 0 until as.length) yield compileAggrCounter(as(i), q"${counterVars(i)}") }
         """)}
 
-        db.Table(Array(..${ for (i <- 0 until as.length) yield q"db.Column.makeWithoutChecking(Array(${counterVars(i)}))" }))
+        db.Table(Array(..${ for (i <- 0 until as.length) yield q"db.Column.make(Array(${compileAggrRes(as(i), q"${counterVars(i)}")}))" }))
       """
 
     case GroupBy(src, as, groupBy) =>
@@ -510,7 +593,7 @@ object Compile {
 
     q"""
       (database: db.Database) => {
-        ..${for { c @ Col(tableRef, colidx) <- cols } yield q"val ${TermName(compileColRef(tableRef, colidx).toString)} = ${compileColRefReal(tableRef, colidx)}"}
+        ..${for { c <- cols } yield q"val ${TermName(compileColRef(c).toString)} = ${compileColRefReal(c)}"}
         ${compileResult(a)}
       }
     """
@@ -537,12 +620,12 @@ object Compile {
   }
 
   def compileAggrInit(a: Aggr) = a match {
-    case Use(_)      => q"0"
-    case Sum(_)      => q"0"
-    case Count(_)    => q"0"
-    case Max(_)      => q"Int.MinValue"
-    case Min(_)      => q"Int.MaxValue"
-    case CountDistinct(_) => q"collection.mutable.Set[Int]()"
+    case Use(_)      => q"0: ${compileType(typeOf(a.e))}"
+    case Sum(_)      => q"0: ${compileType(typeOf(a.e))}"
+    case Count(_)    => q"0: Int"
+    case Max(_)      => q"Int.MinValue" ; ???
+    case Min(_)      => q"Int.MaxValue" ; ???
+    case CountDistinct(_) => q"collection.mutable.Set[${compileType(typeOf(a.e))}]()"
   }
 
   def compileAggrRes(a: Aggr, c: Tree) = a match {
@@ -556,22 +639,33 @@ object Compile {
     case Oid(t)       => q"${compileOid(t)}"
     case End(t)       => q"${compileEnd(t)}"
 
-    case Length(t)      => q"${compileColRef(t, 0)}.length"
-    case Col(t, colidx) => q"${compileColRef(t, colidx)}.data(${compileOid(t)})"
+    case Length(t)      => q"${compileTableRef(t)}.length"
+    case c @ Col(t, colidx) => q"${compileColRef(c)}.data(${compileOid(t)})"
 
     case Op(x, y, "+") => q"${compileExpr(x)} + ${compileExpr(y)}"
     case Op(x, y, "-") => q"${compileExpr(x)} - ${compileExpr(y)}"
     case Op(x, y, "*") => q"${compileExpr(x)} * ${compileExpr(y)}"
     case Op(x, y, "/") => q"${compileExpr(x)} / ${compileExpr(y)}"
     case Op(x, y, "%") => q"${compileExpr(x)} % ${compileExpr(y)}"
+    case Op(x, y, _) => throw new Exception("unsupported operator")
+
     case Func1(f, e) => q"${reify(f)}(${compileExpr(e)})" 
+
+    case Cast(e, tpe) => q"${compileCast(e, tpe)}"
+
+    case IfExpr(cond, thenExpr, elseExpr) => q"if (${compileBoolExpr(cond)}) ${compileExpr(thenExpr)} else ${compileExpr(elseExpr)}"
 
     case BinarySearch(col, value, startIndex, findLowerBound) =>
       q"""{
         db.Util.binarySearch(${compileColRef(col)}, ${compileExpr(startIndex)}, ${compileExpr(Length(col.table))}, ${compileExpr(value)}, $findLowerBound)
       }"""
+  }
 
-    case e => println(e); ???
+  def compileCast(e: Expr, tpe: ColumnType) = tpe match {
+    case IntType    => q"${compileExpr(e)}.toInt"
+    case LongType   => q"${compileExpr(e)}.toLong"
+    case FloatType  => q"${compileExpr(e)}.toFloat"
+    case DoubleType => q"${compileExpr(e)}.toDouble"
   }
 
   def compileOid(t: TableRef) = TermName(s"_oid_${t.alias}")
@@ -582,15 +676,16 @@ object Compile {
     case TempTableRef(columns, alias)     => q"${TermName(s"_temp_table_$alias")}"
   }
 
-  def compileColRefReal(t: TableRef, colidx: Int) =
-    q"${compileTableRef(t)}.columns($colidx)"
+  def compileColRefReal(col: Col) = col.info.tpe match {
+    case IntType    => q"${compileTableRef(col.table)}.columns(${col.colidx}).asInstanceOf[db.IntColumn]"
+    case LongType   => q"${compileTableRef(col.table)}.columns(${col.colidx}).asInstanceOf[db.LongColumn]"
+    case FloatType  => q"${compileTableRef(col.table)}.columns(${col.colidx}).asInstanceOf[db.FloatColumn]"
+    case DoubleType => q"${compileTableRef(col.table)}.columns(${col.colidx}).asInstanceOf[db.DoubleColumn]"
+  }
 
-  def compileColRef(t: TableRef, colidx: Int): Tree =
-    q"${TermName(s"_${t.alias}$$column$$${colidx}")}"
-
-  def compileColRef(col: Col): Tree = col match {
-    case Col(tableRef, colidx) =>
-      compileColRef(tableRef, colidx)
+  def compileColRef(col: Col): Tree = {
+    val Col(tableRef, colidx) = col
+    q"${TermName(s"_${col.table.alias}$$column$$$colidx")}"
   }
 
 
@@ -604,6 +699,36 @@ object Compile {
     case Rel(x, y, "!=") => q"${compileExpr(x)} != ${compileExpr(y)}"
     case Rel(x, y, ">")  => q"${compileExpr(x)} > ${compileExpr(y)}"
     case Rel(x, y, "<")  => q"${compileExpr(x)} < ${compileExpr(y)}"
+  }
+
+  def compileType(tpe: ColumnType) = tpe match {
+    case IntType    => tq"Int"
+    case LongType   => tq"Long"
+    case FloatType  => tq"Float"
+    case DoubleType => tq"Double"
+  }
+
+
+  def typeOf(e: Expr) = _traverse[ColumnType, ColumnType](e, {
+    case c: Col => c.info.tpe
+    case c: Count => IntType
+    case c: Const => IntType // ???
+    case o: Oid   => IntType
+    case o: End   => IntType
+    case l: Length => IntType
+  }, (tpe, thisTpe) => if (tpe == null) thisTpe else widenType(tpe, thisTpe), null)
+
+  def widenType(a: ColumnType, b: ColumnType): ColumnType = (a, b) match {
+    case (IntType, IntType) => IntType
+
+    case (FloatType, _) => FloatType
+    case (_, FloatType) => FloatType
+
+    case (DoubleType, _) => DoubleType
+    case (_, DoubleType) => DoubleType
+
+    case (LongType, _) => FloatType
+    case (_, LongType) => FloatType
   }
 
 }
@@ -622,21 +747,25 @@ object Rules {
     }),
 
     rewrite({
-//      case Filter(l: TableScan, Rel(col: Col, e, op)) if col.info.oids =>
-//        Filter(l, Rel(Oid(l.table), e, op))
-//
-//      case Filter(l: TableScan, Rel(e, col: Col, op)) if col.info.oids =>
-//        Filter(l, Rel(e, Oid(l.table), op))
-//
+      case Filter(l: TableScan, Rel(col: Col, e, op)) if col.info.oids =>
+        Filter(l, Rel(Oid(l.table), e, op))
+
+      case Filter(l: TableScan, Rel(e, col: Col, op)) if col.info.oids =>
+        Filter(l, Rel(e, Oid(l.table), op))
+
 //
 //      case Filter(l: TableScan, Rel(o: Oid, e, ">")) =>
 //        l.copy(start = l.start :+ e)
 //
 //      case Filter(l: TableScan, Rel(e, o: Oid, ">")) =>
 //        l.copy(start = l.start :+ e)
-//
-//      case Filter(l: TableScan, Rel(e, o: Oid, "<")) =>
-//        l.copy(end = l.end :+ e)
+
+      case Filter(l: TableScan, Rel(e, o: Oid, "<")) =>
+        l.copy(end = l.end :+ e)
+
+      case Filter(l: TableScan, Rel(o: Oid, e, "<")) =>
+        l.copy(end = l.end :+ e)
+
 
 
       case Take(l: TableScan, limit, offset) =>

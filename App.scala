@@ -11,10 +11,12 @@ object App extends App {
     for (i <- 0 until table.columns.head.length) yield
       table.columns map { _.getAsAny(i) } toSeq
 
+
   val len = 10000000
   val table1 = Table(Array(
     Column.make(0 until len toArray),
-    Column.make(0 until len map (_ % 20) toArray)
+    Column.make(0 until len map (_ % 20) toArray),
+    Column.make(Array.fill(len)(util.Random.nextDouble))
   ))
 
   val table2 = Table(Array(
@@ -34,6 +36,7 @@ object App extends App {
 
   import Rules.rewriteAll
 
+{
   val q1 = TableScan(t1)
     .take(100)
     .filter(r => r(0) < Const(100))
@@ -53,9 +56,11 @@ object App extends App {
       aggr = r => Seq(Use(r(0)), Use(r(2)), Sum(r(1)), Sum(r(3))),
       on   = r => r(0)
     )
+}
 
-  println(q1)
-  println(q2)
+
+  val query = rewriteAll(TableScan(t1).filter(r => r(0) < 100000)).groupBy(aggr = r => Seq(Count(), Sum(r(0)), Sum(r(1)), Sum(r(2)), CountDistinct(r(2)) ))
+
 
   val queryFunc = Compile.compile(query)
   tabulate(queryFunc(database)) foreach println
