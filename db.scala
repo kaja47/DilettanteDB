@@ -54,10 +54,12 @@ object Info {
 }
 
 sealed trait ColumnType
-case object IntType extends ColumnType
-case object LongType extends ColumnType
-case object FloatType extends ColumnType
-case object DoubleType extends ColumnType
+sealed trait IntegralType      extends ColumnType
+sealed trait FloatingPointType extends ColumnType
+case object IntType    extends IntegralType
+case object LongType   extends IntegralType
+case object FloatType  extends FloatingPointType
+case object DoubleType extends FloatingPointType
 
 
 
@@ -89,9 +91,8 @@ object Column {
     }
   }
 
-  def makeWithoutChecking(data: Array[Int]) = {
+  def makeWithoutChecking(data: Array[Int]) =
     IntColumn(data, Info.randomData(IntType), 0, -1)
-  }
 
 
   def make(data: Array[Long]) = {
@@ -121,9 +122,8 @@ object Column {
     }
   }
 
-  def makeWithoutChecking(data: Array[Long]) = {
+  def makeWithoutChecking(data: Array[Long]) =
     LongColumn(data, Info.randomData(LongType), 0, -1)
-  }
 
   def make(data: Array[Float]) = {
     if (data.length == 0) {
@@ -152,9 +152,8 @@ object Column {
     }
   }
 
-  def makeWithoutChecking(data: Array[Float]) = {
+  def makeWithoutChecking(data: Array[Float]) =
     FloatColumn(data, Info.randomData(FloatType), 0, -1)
-  }
 
   def make(data: Array[Double]) = {
     if (data.length == 0) {
@@ -183,9 +182,8 @@ object Column {
     }
   }
 
-  def makeWithoutChecking(data: Array[Double]) = {
+  def makeWithoutChecking(data: Array[Double]) =
     DoubleColumn(data, Info.randomData(DoubleType), 0, -1)
-  }
 
 }
 
@@ -237,6 +235,10 @@ case class RowRef(cols: Array[Col]) {
   def tableRefs = cols.map(_.table).toSet
 }
 
+object RowRef {
+  def apply(cols: Col *): RowRef = RowRef(cols.toArray)
+}
+
 
 
 sealed trait Src {
@@ -247,7 +249,7 @@ sealed trait Src {
   def map(f: RowRef => RowRef) = Map(this, f(row))
   def flatMap(f: RowRef => Src) = FlatMap(this, f(row))
 
-  def groupBy(aggr: RowRef => Seq[Aggr], on: RowRef => Expr = null) = GroupBy(this, aggr(row), if (on == null) null else on(row))
+  def groupBy(aggr: RowRef => Seq[Aggr], on: RowRef => Expr = null, sort: Boolean = false) = GroupBy(this, aggr(row), if (on == null) null else on(row), sort)
   def getAll = GetAll(this)
 }
 
@@ -276,7 +278,7 @@ case class HashMultiLookup(src: Src, inner: Src, srcExpr: Expr, innerExpr: Expr)
 
 //case class Join(src1: Src, src2: Src, on: Expr) extends Src
 
-case class GroupBy(src: Src, aggrs: Seq[Aggr], on: Expr = null) extends Result {
+case class GroupBy(src: Src, aggrs: Seq[Aggr], on: Expr = null, sort: Boolean = true) extends Result {
   val tableRef = TempTableRef(aggrs map { a => Info.randomData(IntType) } toArray)
 }
 case class GetAll(src: Src) extends Result {
@@ -443,7 +445,6 @@ object Compile {
 
     case HashLookup(src, inner, srcExpr, innerExpr) =>
       val mapping = freshName("_mapping$")
-
       val itr = Expr.getOneTableRef(innerExpr)
 
       q"""
@@ -533,7 +534,7 @@ object Compile {
 
 
   def compileResult(a: Result) = a match {
-    case GroupBy(src, as, null) =>
+    case GroupBy(src, as, null, _) =>
       val counterVars = 0 until as.length map { _ => freshName("_counter$") }
       val initCounters = for (i <- 0 until as.length) yield q"var ${counterVars(i)} = ${compileAggrInit(as(i))}"
 
@@ -547,7 +548,7 @@ object Compile {
         db.Table(Array(..${ for (i <- 0 until as.length) yield q"db.Column.make(Array(${compileAggrRes(as(i), q"${counterVars(i)}")}))" }))
       """
 
-    case GroupBy(src, as, groupBy) =>
+    case GroupBy(src, as, groupBy, sort) =>
       val counterVars = 0 until as.length map { _ => freshName("_counter$") }
       val initCounters = for (i <- 0 until as.length) yield q"var ${counterVars(i)} = ${compileAggrInit(as(i))}"
 
@@ -565,7 +566,8 @@ object Compile {
         val arrays = Array.fill(${as.length})(new Array[Int](len))
 
         var i = 0
-        m.values foreach { c =>
+        val _values = ${if (sort) q"m.toArray.sortBy(_._1).iterator.map(_._2)" else q"m.values" }
+        _values foreach { c =>
           ..${ for (i <- 0 until as.length) yield q"arrays($i)(i) = ${compileAggrRes(as(i), q"c.${counterVars(i)}")}" }
           i += 1
         }

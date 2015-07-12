@@ -36,7 +36,6 @@ object App extends App {
 
   import Rules.rewriteAll
 
-{
   val q1 = TableScan(t1)
     .take(100)
     .filter(r => r(0) < Const(100))
@@ -54,12 +53,10 @@ object App extends App {
   val query = q2
     .groupBy(
       aggr = r => Seq(Use(r(0)), Use(r(2)), Sum(r(1)), Sum(r(3))),
-      on   = r => r(0)
+      on   = r => r(0),
+      sort = true
     )
-}
 
-
-  val query = rewriteAll(TableScan(t1).filter(r => r(0) < 100000)).groupBy(aggr = r => Seq(Count(), Sum(r(0)), Sum(r(1)), Sum(r(2)), CountDistinct(r(2)) ))
 
 
   val queryFunc = Compile.compile(query)
